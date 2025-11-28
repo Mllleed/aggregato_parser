@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Парсер компаний</title>
+    <link rel='stylesheet' href="static/css/style.css">
+</head>
+<body>
+    <h1>Парсер компаний</h1>
+
+<div class="container">
+    <!-- Блок фильтров -->
+    <div class="filters">
+        <div class="form-group">
+            <label>Источник данных:</label>
+            <select id="dataSource">
+                <option value="yandex-maps">Яндекс Карты</option>
+                <option value="2gis">2ГИС</option>
+                <option value="google-maps">Google Карты</option>
+                <option value="yandex-uslugi">Яндекс Услуги</option>
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label>Категория:</label>
+            <input type="text" id="category" placeholder="Например: Стоматологии">
+        </div>
+
+        <div class="form-group">
+            <label>Регион:</label>
+            <input type="text" id="region" placeholder="Например: Москва">
+        </div>
+
+        <div class='container' style="display: flex; width: 100%;">
+            <div class="checkbox-list">
+                <label><input type="checkbox" id="name" checked>Название</label>
+            </div>
+            <div class="checkbox-list">
+                <label><input type="checkbox" id="address" checked>Адрес</label>
+            </div>
+            <div class="checkbox-list">
+                <label><input type="checkbox" id="number" checked>Номер</label>
+            </div>
+            <div class="checkbox-list">
+                <label><input type="checkbox" id="mail" checked>Почта</label>
+            </div>
+            <div class="checkbox-list">
+                <label><input type="checkbox" id="website" checked>Вебсайт</label>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label>Фильтр по обороту (руб):</label>
+            <input type="number" id="revenue" placeholder="Минимальный оборот">
+            <small>Будет работать после подключения API ФНС</small>
+        </div>
+
+        <!-- Кнопка старта -->
+        <button id="toggleBtn">Запустить парсер</button>
+
+        <!-- Кнопка для скачивания -->
+        <button id="downloadBtn" style="display: none;">Скачать Excel</button>
+
+        <!-- Прогресс-бар -->
+<div id="progress-container" style="width: 100%; background: #eee; height: 25px; border-radius: 4px; margin-top: 20px;">
+    <div id="progress-bar" style="height: 100%; width: 0%; background: #4caf50; border-radius: 4px;"></div>
+</div>
+
+<p id="progress-text">Статус: —</p>
+
+
+        <!-- Статус -->
+        <div id="status" style="margin-top:10px; font-weight:bold;">Ожидание запуска...</div>
+
+    </div>
+</div>
+</body>
+</html>
+
+
+<script>
+let running = false;
+let progressTimer = null;
+let lastParams = {}; // ВАЖНО
+
+async function fetchProgress() {
+    console.log("fetchProgress вызван");
+
+    const resp = await fetch("/progress");
+    const p = await resp.json();
+
+    console.log("Ответ /progress:", p);
+
+    document.getElementById("progress-container").style.display = "block";
+    document.getElementById("progress-bar").style.width = p.percent + "%";
+    document.getElementById("progress-text").textContent = `${p.message} (${p.percent}%)`;
+    document.getElementById("status").textContent = `${p.message} (${p.percent}%)`;
+
+    // Когда парсинг завершён — скачать файл автоматически
+    if (p.status === "done") {
+        clearInterval(progressTimer);
+        running = false;
+
+        const fileName =
+            `parsed_${lastParams.dataSource}_${lastParams.category}_${lastParams.region}.xlsx`;
+
+        console.log("Скачиваем:", fileName);
+        window.location.href = `/download/${fileName}`;
+    }
+}
+
+document.getElementById("toggleBtn").addEventListener("click", async () => {
+    if (running) return;
+
+    running = true;
+
+    // Сохранить параметры
+    lastParams = {
+        dataSource: document.getElementById("dataSource").value,
+        category: document.getElementById("category").value.trim(),
+        region: document.getElementById("region").value.trim(),
+        revenue: document.getElementById("revenue").value.trim()
+    };
+
+    // Прогресс
+    document.getElementById("progress-container").style.display = "block";
+    document.getElementById("progress-bar").style.width = "0%";
+    document.getElementById("status").textContent = "Запуск...";
+
+    const payload = {
+        ...lastParams,
+        check_data: {
+            name: document.getElementById("name").checked,
+            address: document.getElementById("address").checked,
+            number: document.getElementById("number").checked,
+            mail: document.getElementById("mail").checked,
+            website: document.getElementById("website").checked,
+        }
+    };
+
+    const resp = await fetch("/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+    });
+
+    const data = await resp.json();
+
+    if (data.status === "completed") {
+        // На случай мгновенного завершения
+        window.location.href = data.download_url;
+        return;
+    }
+
+    // Каждые 3 сек обновляем прогресс
+    progressTimer = setInterval(fetchProgress, 3000);
+});
+</script>
+
+</body>
+</html>
