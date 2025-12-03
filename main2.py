@@ -3,7 +3,7 @@ import re
 import json
 import pandas as pd
 
-from pprint import pprint
+
 from selenium import webdriver
 from selenium.common import NoSuchElementException, StaleElementReferenceException, TimeoutException, \
     ElementClickInterceptedException
@@ -17,15 +17,66 @@ from typing import TypeVar, Callable, Any
 
 from abc import ABC, abstractmethod
 
-progress = {
-    "total": None,
-    "processed": 0,
-    "percent": 0.0,
-    "status": "idle",
-    "message": "",
-}
 
 count_of_units = 1000
+
+# Установите: pip install webdriver-manager
+
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service as ChromeService
+from selenium.webdriver.firefox.service import Service as FirefoxService
+from webdriver_manager.chrome import ChromeDriverManager
+from webdriver_manager.firefox import GeckoDriverManager
+from webdriver_manager.microsoft import EdgeChromiumDriverManager
+import platform
+
+
+def setup_driver_automatically():
+    os_name = platform.system().lower()
+
+    browsers = {}
+    if os_name == 'windows':
+        # browsers = get_installed_browsers_windows()
+        pass
+    elif os_name == 'darwin':
+        # browsers = get_installed_browsers_mac()
+        pass
+    elif os_name == 'linux':
+        # browsers = get_installed_browsers_linux()
+        pass
+
+    if not browsers:
+        raise Exception("Браузеры не найдены!")
+
+    # Выбираем браузер по приоритету
+    preferred_order = ['chrome', 'firefox', 'edge', 'opera', 'safari']
+
+    for browser in preferred_order:
+        if browser in browsers:
+            return setup_specific_driver(browser)
+
+    # Если ничего не нашли, пробуем первый доступный
+    first_browser = list(browsers.keys())[0]
+    return setup_specific_driver(first_browser)
+
+
+def setup_specific_driver(browser_name):
+    if browser_name == 'chrome':
+        service = ChromeService(ChromeDriverManager().install())
+        return webdriver.Chrome(service=service)
+
+    elif browser_name == 'firefox':
+        service = FirefoxService(GeckoDriverManager().install())
+        return webdriver.Firefox(service=service)
+
+    elif browser_name == 'edge':
+        from selenium.webdriver.edge.service import Service as EdgeService
+        from webdriver_manager.microsoft import EdgeChromiumDriverManager
+        service = EdgeService(EdgeChromiumDriverManager().install())
+        return webdriver.Edge(service=service)
+
+    else:
+        raise Exception(f"Браузер {browser_name} не поддерживается")
 
 
 def setup_stealth_driver():
@@ -95,7 +146,7 @@ class BaseParser(ABC):
 
     @classmethod
     def _find_phones(cls, driver, platform):
-        if platform == '2gis':
+        if platform == '2ИГС':
             elem = driver.find_element(By.CLASS_NAME, "_b0ke8")
             a = elem.find_element(By.CLASS_NAME, '_2lcm958')
             text = a.get_attribute('href')
@@ -107,7 +158,7 @@ class BaseParser(ABC):
                 phone = "+" + phone
             return phone[0] if phone else "Не найдено"
 
-        if platform == 'yandex-maps':
+        if platform == 'Яндекс':
             phones = []
             try:
                 for e in driver.find_elements(By.CLASS_NAME, 'card-phones-view__phone-number'):
@@ -120,7 +171,7 @@ class BaseParser(ABC):
             if isinstance(phones, list):
                 return phones[0] if phones else "Не найдено"
 
-        if platform == 'google-maps':
+        if platform == 'Google':
             try:
                 phones = []
                 phone_buttons = driver.find_elements(By.CSS_SELECTOR, 'button[aria-label^="Телефон:"]')
@@ -139,7 +190,7 @@ class BaseParser(ABC):
 
     @classmethod
     def _find_email(cls, driver, platform):
-        if platform == 'yandex-maps':
+        if platform == 'Яндекс':
             try:
                 text = driver.page_source
                 emails = re.findall(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', text)
@@ -147,7 +198,7 @@ class BaseParser(ABC):
                 return emails[0] if emails else "Не найдено"
             except:
                 return "Не найдено"
-        if platform == '2gis':
+        if platform == '2ГИС':
             try:
                 mail = ''
                 elements = driver.find_elements(By.CLASS_NAME, '_49kxlr')
@@ -183,60 +234,61 @@ class YandexParser(BaseParser):
     def parse_element(self) -> list[dict]:
         business_elements = self.driver.find_elements(By.CLASS_NAME, 'search-business-snippet-view__title')
         total = len(business_elements)
-        print(total)
         results = []
 
         for i in range(total):
-            try:
-                current_elements = self.driver.find_elements(By.CLASS_NAME, 'search-business-snippet-view__title')
+            success = False
+            for attempt in range(3):  # Более понятное имя переменной
+                try:
+                    # Обновляем элементы перед каждой попыткой
+                    current_elements = self.driver.find_elements(By.CLASS_NAME, 'search-business-snippet-view__title')
 
-                if i >= len(current_elements):
-                    break
-                business = current_elements[i]
+                    if i >= len(current_elements):
+                        break
 
-                self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", business)
-                time.sleep(0.3)
-                business.click()
+                    business = current_elements[i]
+                    self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", business)
+                    time.sleep(0.5)
+                    self.wait.until(
+                        EC.presence_of_element_located((By.CLASS_NAME, 'search-business-snippet-view__title'))
+                    )
 
-                data = self._parse_data()
+                    business.click()
 
-                progress["current"] = i + 1
-                progress["percent"] = round((i + 1) / total * 100, 2)
-                progress["message"] = f"Обрабатываю {i + 1} из {total}"
+                    data = self._parse_data()
 
-                if data:
-                    results.append(data)
+                    if data:
+                        results.append(data)
+                        success = True
+                        break  # Успешно обработали - выходим из цикла попыток
 
-            except StaleElementReferenceException:
-                # Если все равно упали - пропускаем этот элемент
-                print(f"⚠️ Элемент {i} устарел, пропускаем")
-                continue
-            except Exception as e:
-                import traceback
-                traceback.print_exc()
-                print(f"⚠️ Ошибка: {e}")
-                continue
+                except StaleElementReferenceException:
+                    time.sleep(0.5)  # Добавляем задержку перед повторной попыткой
+                    continue
+                except Exception as e:
+                    time.sleep(0.5)
+                    continue
+
+            if not success:
+                pass
 
         return results
 
-    def parse_businesses(self, query, city):
+    def parse_businesses(self, query):
         result = []
         try:
             self.driver.get("https://yandex.ru/maps/")
             search_box = self.wait.until(EC.presence_of_element_located((By.CLASS_NAME, "input__control")))
             search_box.clear()
-            search_box.send_keys(f"{query} {city}")
+            search_box.send_keys(f"{query}")
             search_box.submit()
             elements = self.wait.until(EC.presence_of_all_elements_located((By.CLASS_NAME, 'search-snippet-view')))
             self.scroll(elements)
             result = self.parse_element()
         except Exception as e:
-            print("❌ Ошибка в parse_businesses:", e)
             import traceback
             traceback.print_exc()
-        finally:
-            print("📦 Итог:", len(result))
-        progress['status'] = 'done'
+
         return result
 
     @parse_if_enabled('name')
@@ -247,7 +299,6 @@ class YandexParser(BaseParser):
         try:
             name = self._safe_find_text(By.CLASS_NAME, 'card-title-view__title-link', self.driver)
         except Exception as e:
-            print(f"⚠️ Не удалось получить name: {e}")
             name = None
         return name
 
@@ -259,7 +310,6 @@ class YandexParser(BaseParser):
             )
             address = self._safe_find_text(By.CLASS_NAME, 'business-contacts-view__address-link', self.driver)
         except Exception as e:
-            print(f"⚠️ Не удалось получить address: {e}")
             address = None
         return address
 
@@ -268,7 +318,6 @@ class YandexParser(BaseParser):
         try:
             phones = self._find_phones(self.driver, self.platform)
         except Exception as e:
-            print(f"⚠️ Не удалось получить phones: {e}")
             phones = []
         return phones
 
@@ -277,7 +326,6 @@ class YandexParser(BaseParser):
         try:
             website = self._safe_find_attribute(By.CLASS_NAME, 'business-urls-view__link', 'href', self.driver)
         except Exception as e:
-            print(f"⚠️ Не удалось получить website: {e}")
             website = None
         return website
 
@@ -286,19 +334,18 @@ class YandexParser(BaseParser):
         try:
             email = self._find_email(self.driver, self.platform)
         except Exception as e:
-            print(f"⚠️ Не удалось получить email: {e}")
             email = None
+
         return email
 
     def _parse_data(self) -> dict | None:
         try:
             card = self.wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, '[class*="card"]')))
             self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", card)
-        except Exception as e:
-            print(f"❌ Карточка не загрузилась: {e}")
+        except Exception:
             return None
 
-        result = {
+        result_dict = {
             "name": self._parse_name(), #type: ignore
             "address": self._parse_address(), #type: ignore
             "numbers": self._parse_phone(), #type: ignore
@@ -306,7 +353,7 @@ class YandexParser(BaseParser):
             "email": self._parse_email(), #type: ignore
         }
 
-        return {k: v for k, v in result.items() if v}
+        return {k: v for k, v in result_dict.items() if v}
 
 
 class TwoGisParser(BaseParser):
@@ -320,6 +367,9 @@ class TwoGisParser(BaseParser):
     def _parse_name(self):
         time.sleep(0.3)
         try:
+            self.wait.until(
+                EC.presence_of_element_located((By.CLASS_NAME, '_1x89xo5'))
+            )
             name = self._safe_find_text(By.CLASS_NAME, '_1x89xo5', self.driver)
         except:
             print('Имя не найдено')
@@ -332,6 +382,9 @@ class TwoGisParser(BaseParser):
         try:
             for _ in range(3):
                 try:
+                    self.wait.until(
+                        EC.presence_of_element_located((By.CLASS_NAME, '_13eh3hvq'))
+                    )
                     address_texts = self.driver.find_elements(By.CLASS_NAME, '_13eh3hvq')
                     address_web = address_texts[0]
                     address_text = address_web.find_element(By.CLASS_NAME, '_2lcm958')
@@ -417,6 +470,7 @@ class TwoGisParser(BaseParser):
         return None
 
     def _parse_data(self):
+        result = {}
         try:
             self.wait.until(
                 EC.presence_of_element_located((By.CLASS_NAME, '_599hh'))
@@ -478,13 +532,6 @@ class TwoGisParser(BaseParser):
 
                 processed_count = self.force[-1] + 1
                 self.force[-1] = processed_count
-
-                # Обновляем прогресс
-                progress["processed"] = processed_count
-                progress["total"] = total
-                progress["percent"] = round(processed_count / total * 100, 2)
-                progress["message"] = f"Обрабатываю {processed_count} из {total}"
-
                 if card:
                     self.force[0].append(card)
             except StaleElementReferenceException:
@@ -492,7 +539,7 @@ class TwoGisParser(BaseParser):
 
         return self.force[0]
 
-    def parse_businesses(self, query, city):
+    def parse_businesses(self, query):
         all_results = []  # Все результаты
         try:
             self.driver.get("https://2gis.ru/")
@@ -501,7 +548,7 @@ class TwoGisParser(BaseParser):
                 EC.presence_of_element_located((By.CLASS_NAME, "_cu5ae4"))
             )
             search_box.clear()
-            search_box.send_keys(f"{query} {city}")
+            search_box.send_keys(f"{query}")
             search_box.submit()
 
             page_num = 1
@@ -528,11 +575,10 @@ class TwoGisParser(BaseParser):
                                     break
                         except StaleElementReferenceException:
                             continue
-                except Exception as e:
-                    print(f"⚠️ Ошибка при поиске стрелки: {e}")
+                except Exception as arrow_error:
+                    print(f"⚠️ Ошибка при поиске стрелки: {arrow_error}")
 
                 if not next_arrow:
-                    print("✅ Достигнута последняя страница")
                     break
 
                 try:
@@ -556,7 +602,7 @@ class TwoGisParser(BaseParser):
             traceback.print_exc()
 
         print(f"🎉 Парсинг завершен! Всего собрано {len(all_results)} записей")
-        progress['status'] = 'done'
+
         return all_results
 
 
@@ -567,9 +613,7 @@ class GoogleParser(BaseParser):
         self.check_data = check_data
 
     def scroll(self, max_stuck=10, timeout=120):
-        """
-        Скроллит страницу плавно, пока не загрузятся новые элементы или не будет превышен лимит ожидания.
-        """
+
         start_time = time.time()
         n = 0
 
@@ -612,40 +656,41 @@ class GoogleParser(BaseParser):
 
     def parse_element(self):
         results = []
-        index = 0
-        i = 0
         total = len(self.driver.find_elements(By.CLASS_NAME, "hfpxzc"))
+        unique_el = None
 
         # Просто выводим в консоль
         print(f"📊 Найдено {total} элементов")
-
+        business_elements = self.driver.find_elements(By.CLASS_NAME, "hfpxzc")
         for i in range(total):
-            business_elements = self.driver.find_elements(By.CLASS_NAME, "hfpxzc")
-            if index >= len(business_elements):
+            if i >= total:
                 break
 
-            business = business_elements[index]
+            business = business_elements[i]
+            for attempt in range(3):
+                if business != unique_el:
+                    unique_el = business
+                else:
+                    continue
+
             self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", business)
             time.sleep(0.3)
 
             try:
                 business.click()
-                time.sleep(1)
+                self.wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, '.bJzME.Hu9e2e.tTVLSc')))
+                self.wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, '.DUwDvf.lfPIob')))
                 data = self._parse_data()
-
-                progress["current"] = i + 1
-                progress["percent"] = round((i + 1) / total * 100, 2)
-                progress["message"] = f"Обрабатываю {i + 1} из {total}"
 
                 if data:
                     results.append(data)
                     print(f"✓ Собраны данные: {data['name'][:30]}...")
             except Exception as e:
-                print(f"⚠️ Ошибка при обработке {index}-го элемента: {e}")
+                print(f"⚠️ Ошибка при обработке {i}-го элемента: {e}")
+                import traceback
+                print("⚠️ Произошла ошибка:", type(e).__name__)
+                print(traceback.format_exc())
 
-            index += 1
-
-        print(f"✅ Завершено! Обработано {i} элементов")
         return results
 
     @parse_if_enabled('name')
@@ -682,28 +727,25 @@ class GoogleParser(BaseParser):
         return phones
 
     @parse_if_enabled('website')
-    def _parse_website(self, name: str) -> list:
-        websites = []
+    def _parse_website(self) -> str:
+        websites: list = []
         try:
-            name = name.replace('"', '').replace("'", "").strip()
-            data_links = self.driver.find_elements(By.XPATH, f"//div[contains(@aria-label, '{name}')]")
-            data_link = data_links[0]
-        except NoSuchElementException:
-            print('нету ссылки, а тебя в Сибирь')
-        except Exception as e:
-            print('Я нинаю', e)
-        try:
-            links = data_link.find_elements(By.CSS_SELECTOR, '.Io6YTe.fontBodyMedium.kR99db.fdkmkc')
-            for el in links:
-                text = el.text.strip()
+            data_links = self.driver.find_elements(By.CSS_SELECTOR, 'a[aria-label*="Перейти на сайт"]')
+
+            for el in data_links:
+                text = el.get_attribute('href')
                 if not text:
                     continue
                 url_pattern = r'^(https?:\/\/|www\.|[A-Za-z0-9-]+\.[A-Za-z]{2,})'
                 if re.match(url_pattern, text):
                     websites.append(text)
+
+        except NoSuchElementException:
+            print('нету ссылки, а тебя в Сибирь')
         except Exception as e:
-            print(f'⚠️ Ошибка при парсинге ссылок: {e}')
-        return websites
+            print('Я нинаю', e)
+
+        return ' '.join(websites) if websites else ''
 
     def _parse_data(self):
         try:
@@ -716,10 +758,10 @@ class GoogleParser(BaseParser):
         return {'name': self._parse_name(),
                 'address': self._parse_address(),
                 'phone': ' '.join(self._parse_number()),
-                'websites': self._parse_website(self._parse_name()),
+                'websites': self._parse_website(),
                 }
 
-    def parse_businesses(self, query, city):
+    def parse_businesses(self, query):
         result = {}
         try:
             self.driver.get('https://www.google.com/maps')
@@ -728,14 +770,13 @@ class GoogleParser(BaseParser):
             )
             search_box = self.driver.find_element(By.CSS_SELECTOR, '.fontBodyMedium.searchboxinput.xiQnY')
             search_box.clear()
-            search_box.send_keys(f"{query} {city}")
+            search_box.send_keys(f"{query}")
             search_box.send_keys(Keys.ENTER)
 
             self.scroll()
             result = self.parse_element()
         except Exception as e:
             print(e)
-        progress['status'] = 'done'
         return result
 
 
@@ -815,13 +856,13 @@ class YandexService(BaseParser):
             })
         return result
 
-    def parse_businesses(self, query, city):
+    def parse_businesses(self, query):
         result = []
         try:
             self.driver.get("https://uslugi.yandex.ru/")
             search_box = self.wait.until(EC.element_to_be_clickable((By.CLASS_NAME, "Textinput-Control")))
             search_box.click()
-            search_box.send_keys(f"{query} {city}")
+            search_box.send_keys(f"{query}")
             search_box.send_keys(Keys.ENTER)
             time.sleep(1)
 
@@ -845,27 +886,27 @@ class YandexService(BaseParser):
             pass
         finally:
             print('rofls')
-        progress['status'] = 'done'
+
         return result
 
 
-def main(query, city, platform, check_data):
+def main(query: str, platform: str, check_data: dict):
     driver = setup_stealth_driver()
     parser = ''
-    if platform == 'yandex-maps':
+    if platform == 'Яндекс':
         parser = YandexParser(driver, platform, check_data)
-    if platform == '2gis':
+    if platform == '2ГИС':
         parser = TwoGisParser(driver, platform, check_data)
-    if platform == 'google-maps':
+    if platform == 'Google':
         parser = GoogleParser(driver, platform, check_data)
-    if platform == "yandex-uslugi":
+    if platform == "Яндекс Услуги":
         parser = YandexService(driver, platform, check_data)
 
-    results = parser.parse_businesses(query, city)
+    results = parser.parse_businesses(query)
     driver.quit()
 
-    json_path = f'parsed_{platform}_{query}_{city}.json'
-    excel_path = f'parsed_{platform}_{query}_{city}.xlsx'
+    json_path = f'parsed_{platform}_{query}.json'
+    excel_path = f'parsed_{platform}_{query}.xlsx'
 
     # Сохраняем JSON
     with open(json_path, 'w', encoding='utf-8') as f:

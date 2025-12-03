@@ -1,17 +1,32 @@
-import requests
-from pprint import pprint
-import http
+from setuptools import setup, find_packages
 
-url = ' https://api-fns.ru/api/search'
 
-payload = {
-    'q': 'Стоматология',
-    'page': 1,
-    'key': 'c5d950f0bba7be07e86317e91980706a1f644331',
-    'region': '55'
+APP_NAME = 'parser'
+VERSION = '1.0.0'
+AUTHOR = 'Эдя'
+DESCRIPTION = 'помилуйте парсер, ему очень плохо'
 
-}
-resp = requests.get(url, params=payload)
+# Список зависимостей
+with open('requirements.txt') as f:
+    requirements = f.read().splitlines()
 
-print(resp.url)
-pprint(resp.json())
+setup(
+    name=APP_NAME,
+    version=VERSION,
+    author=AUTHOR,
+    description=DESCRIPTION,
+    packages=find_packages(),
+    install_requires=requirements,
+    include_package_data=True,
+    entry_points={
+        'console_scripts': [
+            'myapp=src.main:main',
+        ],
+    },
+    classifiers=[
+        'Programming Language :: Python :: 3',
+        'Operating System :: Microsoft :: Windows',
+        'Operating System :: MacOS',
+        'Operating System :: POSIX :: Linux',
+    ],
+)

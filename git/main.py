@@ -2,11 +2,12 @@ from selenium import webdriver
 from selenium.webdriver import ActionChains
 from selenium.common.exceptions import NoSuchElementException
 from selenium.webdriver.chrome.options import Options
-
+from selenium.webdriver.support import expected_conditions as EC
 from bs4 import BeautifulSoup
 from time import sleep
 
 from selenium.webdriver.common.by import By
+from selenium.webdriver.support.wait import WebDriverWait
 
 import json_pattern
 import util_module
@@ -47,6 +48,7 @@ class GrabberApp:
         self.city = city
         self.org_type = org_type
 
+
     def grab_data(self):
         # Создаем OUTPUT.json
         util_module.JSONWorker("get", "")
@@ -54,7 +56,7 @@ class GrabberApp:
         driver = setup_stealth_driver()
         driver.maximize_window()
         driver.get('https://yandex.ru/maps')
-
+        WebDriverWait(driver, 20).until(EC.presence_of_element_located((By.CLASS_NAME, "search-form-view__input")))
         # Вводим данные поиска
         driver.find_element(By.CLASS_NAME, 'search-form-view__input').send_keys(self.city + ' ' + self.org_type)
 
@@ -142,6 +144,4 @@ def main():
     grabber = GrabberApp(city, org_type)
     grabber.grab_data()
 
-
-if __name__ == '__main__':
-    main()
+main()
